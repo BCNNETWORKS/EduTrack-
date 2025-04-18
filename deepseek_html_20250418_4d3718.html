@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Edu Track | BCN Networks</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Digital learning platform with shared resources, online meetings, and collaboration tools">
+  <link href="https://fonts.googleapis.com/css?family=Roboto:400,700&display=swap" rel="stylesheet">
+  <!-- FontAwesome -->
+  <script src="https://kit.fontawesome.com/0e93c2c8f8.js" crossorigin="anonymous"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
+  <style>
+    /* [Previous CSS remains exactly the same] */
+  </style>
+</head>
+<body>
+  <!-- WhatsApp Floating Button -->
+  <div class="whatsapp-float">
+    <a href="https://wa.me/254707539728" target="_blank">
+      <i class="fab fa-whatsapp"></i> Chat Now
+    </a>
+  </div>
+
+  <!-- [Previous HTML structure remains the same until Resources section] -->
+
+  <!-- Resources Section (Updated) -->
+  <section id="resources-section" class="section" style="display:none;">
+    <h2>Shared Resources</h2>
+    <p>Upload and access educational materials shared by the community</p>
+    
+    <div class="upload-area">
+      <input type="file" id="fileInput" multiple>
+      <button onclick="uploadFiles()"><i class="fas fa-upload"></i> Upload</button>
+    </div>
+    
+    <button onclick="togglePublicFiles()" class="public-files-btn" id="toggleFilesBtn">
+      <i class="fas fa-users"></i> Show Community Files
+    </button>
+    
+    <div id="publicFilesContainer" style="display:none;">
+      <h3 style="color:#0a4b78;border-bottom:1px solid #e2e8f0;padding-bottom:10px;">
+        <i class="fas fa-users"></i> Public Files
+      </h3>
+      <div id="publicFilesList" class="resources-list"></div>
+    </div>
+    
+    <h3 style="color:#0a4b78;margin-top:30px;">
+      <i class="fas fa-user"></i> Your Recent Uploads
+    </h3>
+    <div id="resourcesList" class="resources-list"></div>
+  </section>
+
+  <!-- [Rest of HTML remains the same] -->
+
+  <script>
+    // ======================
+    // Firebase Configuration
+    // ======================
+    const firebaseConfig = {
+      apiKey: "AIzaSyYOUR_API_KEY_HERE",
+      authDomain: "edutrack-bcn.firebaseapp.com",
+      projectId: "edutrack-bcn",
+      storageBucket: "edutrack-bcn.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abcdef1234567890"
+    };
+    
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const storage = firebase.storage();
+    const db = firebase.firestore();
+    
+    // =================
+    // File Management
+    // =================
+    async function uploadFiles() {
+      const files = document.getElementById('fileInput').files;
+      if (!files.length) return alert('Please select files first');
+      
+      try {
+        const uploadPromises = Array.from(files).map(async (file) => {
+          // Create storage reference
+          const storageRef = storage.ref(`public_files/${Date.now()}_${file.name}`);
+          
+          // Upload file
+          await storageRef.put(file);
+          const url = await storageRef.getDownloadURL();
+          
+          // Save file metadata
+          return db.collection('public_files').add({
+            name: file.name,
+            url: url,
+            type: file.type,
+            size: file.size,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            uploader: "Anonymous"
+          });
+        });
+        
+        await Promise.all(uploadPromises);
+        alert(`${files.length} file(s) uploaded successfully!`);
+        loadPublicFiles();
+        loadPersonalFiles();
+      } catch (error) {
+        console.error("Upload failed:", error);
+        alert("Upload failed. Please try again.");
+      }
+    }
+    
+    async function loadPublicFiles() {
+      try {
+        const snapshot = await db.collection('public_files')
+          .orderBy('timestamp', 'desc')
+          .limit(50)
+          .get();
+        
+        const list = document.getElementById('publicFilesList');
+        list.innerHTML = '';
+        
+        if (snapshot.empty) {
+          list.innerHTML = '<div style="color:#888;padding:1em;">No public files available yet</div>';
+          return;
+        }
+        
+        snapshot.forEach(doc => {
+          const file = doc.data();
+          const fileElement = document.createElement('div');
+          fileElement.className = 'file-item';
+          fileElement.innerHTML = `
+            <div class="doc-title">
+              <i class="${getFileIcon(file.type)}"></i> 
+              <span>${file.name}</span>
+              <small>(${formatFileSize(file.size)})</small>
+            </div>
+            <a href="${file.url}" target="_blank" class="download-btn">
+              <i class="fas fa-download"></i> Download
+            </a>
+          `;
+          list.appendChild(fileElement);
+        });
+      } catch (error) {
+        console.error("Error loading files:", error);
+        document.getElementById('publicFilesList').innerHTML = 
+          '<div style="color:red;padding:1em;">Error loading files. Please refresh.</div>';
+      }
+    }
+    
+    function loadPersonalFiles() {
+      // This remains using localStorage for user's personal files
+      const resources = JSON.parse(localStorage.getItem('edutrack_resources') || [];
+      const list = document.getElementById('resourcesList');
+      list.innerHTML = '';
+      
+      if (!resources.length) {
+        list.innerHTML = '<div style="color:#888;padding:1em;">You haven\'t uploaded any files yet</div>';
+        return;
+      }
+      
+      resources.forEach((res, i) => {
+        const fileElement = document.createElement('div');
+        fileElement.className = 'file-item';
+        fileElement.innerHTML = `
+          <div class="doc-title">${res.name}</div>
+          <div>
+            <button onclick="downloadResource(${i})">
+              <i class="fas fa-download"></i> Download
+            </button>
+            <button onclick="deleteResource(${i})" class="delete-btn">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </div>
+        `;
+        list.appendChild(fileElement);
+      });
+    }
+    
+    function togglePublicFiles() {
+      const container = document.getElementById('publicFilesContainer');
+      const btn = document.getElementById('toggleFilesBtn');
+      
+      if (container.style.display === 'none') {
+        container.style.display = 'block';
+        btn.innerHTML = '<i class="fas fa-users"></i> Hide Community Files';
+        loadPublicFiles();
+      } else {
+        container.style.display = 'none';
+        btn.innerHTML = '<i class="fas fa-users"></i> Show Community Files';
+      }
+    }
+    
+    // =================
+    // Meetings Functionality
+    // =================
+    function initMeetings() {
+      // Jitsi Meet integration is already working via the links
+      // Additional meeting controls can be added here
+    }
+    
+    // =================
+    // Contact Form Handling
+    // =================
+    function handleContactForm(event) {
+      event.preventDefault();
+      const form = event.target;
+      
+      // Basic validation
+      const name = form.name.value.trim();
+      const email = form.email.value.trim();
+      const message = form.message.value.trim();
+      
+      if (!name || !email || !message) {
+        alert('Please fill all fields');
+        return;
+      }
+      
+      // Netlify form handling
+      const formData = new FormData(form);
+      
+      fetch('/', {
+        method: 'POST',
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(formData).toString()
+      })
+      .then(() => {
+        // Show success message
+        const successDiv = document.createElement('div');
+        successDiv.className = 'form-success';
+        successDiv.innerHTML = 'Message sent successfully! We will contact you soon.';
+        form.appendChild(successDiv);
+        
+        // Reset form
+        form.reset();
+        
+        // Remove success message after 5 seconds
+        setTimeout(() => {
+          successDiv.remove();
+        }, 5000);
+      })
+      .catch(error => {
+        console.error('Form submission error:', error);
+        alert('Error sending message. Please try again or contact us directly.');
+      });
+    }
+    
+    // =================
+    // Helper Functions
+    // =================
+    function getFileIcon(type) {
+      if (!type) return 'fas fa-file';
+      if (type.includes('image')) return 'fas fa-image';
+      if (type.includes('pdf')) return 'fas fa-file-pdf';
+      if (type.includes('word')) return 'fas fa-file-word';
+      if (type.includes('excel')) return 'fas fa-file-excel';
+      if (type.includes('video')) return 'fas fa-file-video';
+      return 'fas fa-file';
+    }
+    
+    function formatFileSize(bytes) {
+      if (!bytes) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // =================
+    // Initialization
+    // =================
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initialize sections
+      showSection('home');
+      
+      // Set up form submission
+      const contactForm = document.querySelector('form[name="contact"]');
+      if (contactForm) {
+        contactForm.addEventListener('submit', handleContactForm);
+      }
+      
+      // Initialize meetings
+      initMeetings();
+      
+      // Load initial files if on resources page
+      if (window.location.hash === '#resources') {
+        showSection('resources');
+        loadPublicFiles();
+        loadPersonalFiles();
+      }
+    });
+    
+    // Section navigation
+    function showSection(section, e) {
+      if (e) e.preventDefault();
+      
+      // Hide all sections
+      document.querySelectorAll('.section').forEach(el => {
+        el.style.display = 'none';
+      });
+      
+      // Show selected section
+      document.getElementById(`${section}-section`).style.display = 'block';
+      
+      // Update active nav link
+      document.querySelectorAll('nav a').forEach(a => {
+        a.classList.remove('active');
+      });
+      
+      const activeLink = e ? e.target : document.querySelector(`nav a[href="#${section}"]`);
+      activeLink.classList.add('active');
+      
+      // Load data for the section
+      if (section === 'resources') {
+        loadPublicFiles();
+        loadPersonalFiles();
+      }
+    }
+  </script>
+</body>
+</html>
